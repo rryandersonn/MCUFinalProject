@@ -1,0 +1,109 @@
+// include libraries
+#include <Arduino.h>
+#include <Wire.h>
+#include <WiFi.h>                                          // for WiFi functions
+#include <esp_wifi.h>                                      // for esp_wifi_set_channel
+#include <esp_now.h>                                       // for ESP-NOW functions
+#include <MPU9250.h>                                       // for IMU functions
+
+MPU9250 mpu;
+
+//define I2C pins for IMU
+#define I2C_SDA 21
+#define I2C_SCL 22
+
+
+
+
+// Proxy MAC address (replace with your proxy's MAC)
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // broadcast to ALL devices reading for struct_message
+
+// set up bluetooth structure - esp now
+typedef struct struct_message {
+  int ax;
+  int ay;
+  int az;
+  int gx;
+  int gy;
+  int gz;
+} struct_message;
+
+struct_message myData;                                      // name the structured message as myData
+esp_now_peer_info_t peerInfo;                               // name the peer information structure as peerInfo
+
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("Send Status: ");                            // Callback when data is sent, Define if the function sent the data successfully or not
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+}
+
+void setup() {
+  Serial.begin(115200);                                     //set baud rate to 115200 for clearer debug
+  WiFi.mode(WIFI_STA);                                      // Set device as a Wi-Fi Station (testing purposes)
+  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);           // Set WiFi channel to 1 (or your chosen channel)
+  Serial.println("Setup Starting...");
+
+    MPU9250Setting setting;
+    setting.accel_fs_sel = ACCEL_FS_SEL::A16G;
+    setting.gyro_fs_sel = GYRO_FS_SEL::G2000DPS;
+    setting.mag_output_bits = MAG_OUTPUT_BITS::M16BITS;
+    setting.fifo_sample_rate = FIFO_SAMPLE_RATE::SMPL_200HZ;
+    setting.gyro_fchoice = 0x03;
+    setting.gyro_dlpf_cfg = GYRO_DLPF_CFG::DLPF_41HZ;
+    setting.accel_fchoice = 0x01;
+    setting.accel_dlpf_cfg = ACCEL_DLPF_CFG::DLPF_45HZ;
+  Wire.begin(I2C_SDA, I2C_SCL);
+    if (!mpu.setup(0x68, setting)) {  // change to your own address
+        
+            Serial.println("MPU connection failed. Please check your connection with `connection_check` example.");
+            
+        }
+    
+
+
+  // Initialize ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return; // restart or handle error
+  }
+  esp_now_register_send_cb(OnDataSent);
+
+  // We will use the broadcast address when sending. Adding a peer is not required for broadcasts.
+  // If you want to send to a specific peer, set peerInfo.peer_addr to that MAC and call esp_now_add_peer().
+
+  //initlizae imu
+
+  
+
+  Serial.println("Setup Complete");                        // Indicate setup is complete
+}
+
+void print_roll_pitch_yaw() {
+    Serial.print("Yaw, Pitch, Roll: ");
+    Serial.print(mpu.getYaw(), 2);
+    Serial.print(", ");
+    Serial.print(mpu.getPitch(), 2);
+    Serial.print(", ");
+    Serial.println(mpu.getRoll(), 2);
+}
+
+void loop() {
+
+
+    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
+    if (result != ESP_OK) {
+      Serial.printf("Error sending data: %d\n", result);
+    }
+   else {
+    // readSensor failed; print debug and try again later
+    Serial.println("MPU readSensor() failed");
+    delay(50);
+  }
+
+  delay(20); // small delay between sends
+  Serial.print("hello");
+  print_roll_pitch_yaw();
+}
+
+
+
+

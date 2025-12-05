@@ -1,0 +1,80 @@
+#include <Arduino.h>
+
+#define REFLECT_PIN 34    // sensor -> ADC1_CH6 (GPIO34)
+#define REF_PIN_REF 35    // external known reference -> ADC1_CH7 (GPIO35)
+
+const float VREF_KNOWN = 2.5000f;   // true voltage of your external precision reference (V)
+const int SAMPLES = 1024;           // oversampling count (power of two recommended)
+const int DELAY_US_BETWEEN = 100;   // micros between samples (adjust to let ADC settle)
+
+void setup() {
+  Serial.begin(115200);
+  // Pin-specific attenuation (full 0..~3.3V). 11db is typical for full scale.
+  analogSetPinAttenuation(REFLECT_PIN, ADC_11db);
+  analogSetPinAttenuation(REF_PIN_REF, ADC_11db);
+  delay(200);
+}
+
+float compute_mean(const long *arr, int n) {
+  long sum = 0;
+  for (int i = 0; i < n; ++i) sum += arr[i];
+  return (float)sum / n;
+}
+
+float compute_stddev(const long *arr, int n, float mean) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i) {
+    double d = arr[i] - mean;
+    s += d * d;
+  }
+  return sqrt(s / (n - 1));
+}
+
+void loop() {
+  static long sensor_samples[SAMPLES];
+  static long ref_samples[SAMPLES];
+
+  // acquire samples
+  for (int i = 0; i < SAMPLES; i++) {
+    sensor_samples[i] = analogRead(REFLECT_PIN);
+    ref_samples[i]    = analogRead(REF_PIN_REF);
+    ets_delay_us(DELAY_US_BETWEEN);
+  }
+
+  // compute means
+  float mean_sensor = compute_mean(sensor_samples, SAMPLES);
+  float mean_ref    = compute_mean(ref_samples, SAMPLES);
+
+  // compute stddev (in ADC units)
+  float sd_sensor = compute_stddev(sensor_samples, SAMPLES, mean_sensor);
+  float sd_ref    = compute_stddev(ref_samples, SAMPLES, mean_ref);
+
+  // ratiometric conversion
+  float voltage_sensor = (mean_sensor / mean_ref) * VREF_KNOWN;
+  float noise_volts = (sd_sensor / mean_ref) * VREF_KNOWN;
+
+  // ADD YOUR CONDITION HERE
+  if (mean_sensor > 4000) {
+    Serial.println("Looking: Right");
+  }
+
+  // existing diagnostic output
+  Serial.print("Sensor V (ratiometric): ");
+  Serial.print(voltage_sensor, 6);
+  Serial.print(" V\tNoise ~ ");
+  Serial.print(noise_volts * 1e6, 2);
+  Serial.print(" uV (1σ) ");
+
+  Serial.print("\tADC mean sensor: ");
+  Serial.print(mean_sensor, 1);
+  Serial.print("  sd: ");
+  Serial.print(sd_sensor, 2);
+
+  Serial.print("\tRef mean: ");
+  Serial.print(mean_ref, 1);
+  Serial.print("  sd: ");
+  Serial.print(sd_ref, 2);
+
+  Serial.println();
+  delay(200);
+}

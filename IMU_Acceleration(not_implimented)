@@ -1,0 +1,169 @@
+#include <MPU9255.h>//include MPU9255 library
+#include <Servo.h>
+
+Servo myservo_X;
+Servo myservo_Y;
+
+int Accelerometer_address = 0x68;
+double scale_factor_to_g = 16384; // for 2g range settings
+double angle = 0;
+
+
+const int LED = 13;
+const int button = 12;
+
+
+int x_cal = 0;
+int y_cal = 0;
+int z_cal = 0;
+
+float s_prev_X = 0;
+float s_prev_Y = 0;
+
+float s_X = 0;
+float s_Y = 0;
+
+float p_prev_X = 0;
+float p_prev_Y = 0;
+
+float p_X = 0;
+float p_Y = 0;
+float t_prev = millis();
+float t_new = 0;
+
+MPU9255 mpu;
+
+
+// Function to debounce a button input (optional, used here)
+bool buttonDebounced(int pinButton, bool lastButtonValue) {
+ bool newButtonValue = digitalRead(pinButton);
+ if (newButtonValue != lastButtonValue) {
+   delay(50);  // Short debounce delay, 50 ms is usually enough
+   newButtonValue = digitalRead(pinButton);
+ }
+ return newButtonValue;
+}
+
+void getPosition(){
+
+}
+void moveAxis(int ax, int ay){
+    //move the x and y axis based on the acceleration
+    t_new = millis() - t_prev;
+
+    s_X = s_prev_X + ax * t_new;
+    s_Y = s_prev_X + ay * t_new;
+
+    s_prev_X = s_X;
+    s_prev_Y = s_Y; 
+
+    p_X = p_prev_X + s_X * t_new;
+    p_Y = p_prev_Y + s_Y * t_new;
+    
+    p_prev_X = p_X;
+    p_prev_Y = p_Y;
+
+    t_prev = t_new;
+
+    
+    if (p_X > 0.1){
+      myservo_X.write(p_X);  
+    }
+    if(p_Y > 0.1){
+      myservo_Y.write(p_Y);
+    }
+
+}
+
+void setup() {
+ Serial.begin(115200);//initialize Serial port
+
+
+ pinMode(button, INPUT_PULLUP);
+
+
+ pinMode(LED, OUTPUT);
+
+
+ if(mpu.init())
+ {
+ Serial.println("initialization successful!");
+ }
+ else
+ {
+ Serial.println("initialization failed");
+ }
+
+
+ mpu.set_acc_scale(scale_2g);//set accelerometer scale
+ 
+ myservo_X.attach(9);
+ myservo_Y.attach(10);
+
+
+
+}
+
+
+void loop() {
+ static bool priorButtonVal = HIGH; // button normally HIGH (pullup)
+ static bool buttonVal = HIGH;
+  mpu.read_acc();//get data from the accelerometer
+
+
+ double new_x = mpu.ax;
+ double new_y = mpu.ay;
+ double new_z = mpu.az;
+
+
+ // Debounce the button, update buttonVal
+ buttonVal = buttonDebounced(button, priorButtonVal);
+
+
+ // Serial.print(buttonVal);
+ // Serial.print(priorButtonVal);
+ if (buttonVal == HIGH && priorButtonVal == HIGH) {
+   mpu.read_acc();//get data from the accelerometer
+   x_cal = new_x;
+   y_cal = new_y;
+   z_cal = (scale_factor_to_g - new_z);
+
+
+   angle = atan2(new_x, new_z)*(180/PI);
+
+
+   digitalWrite(LED, LOW);
+   delay(20);
+ }
+ else {
+   int delay_time = constrain((abs(angle * 10) + 50), 0, 500);
+   digitalWrite(LED, HIGH);
+   delay(delay_time);
+   digitalWrite(LED, LOW);
+   delay(delay_time);
+ }
+ new_x -= x_cal;
+ new_y -= y_cal;
+ new_z -= z_cal;
+
+
+ angle = atan2(new_x, new_z)*(180/PI);
+ // print all data in serial monitor
+ Serial.print("\nAX: ");
+ Serial.print(new_x/scale_factor_to_g);
+ Serial.print(" AY: ");
+ Serial.print(new_y/scale_factor_to_g);
+ Serial.print(" AZ: ");
+ Serial.print(new_z/scale_factor_to_g);
+
+
+ Serial.print("\nAngle: ");
+ Serial.print(angle); // use arctan to get angle - then convert to deg
+
+int ax = new_x/scale_factor_to_g;
+int ay = new_y/scale_factor_to_g;
+
+
+moveAxis(ax, ay);
+
+}
